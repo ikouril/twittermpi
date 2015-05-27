@@ -51,7 +51,7 @@ public class Dump{
 		this.blockSize=blockSize;
 		this.dumpId=dumpId;
 		try {
-			reader=new BufferedReader(new InputStreamReader(new URL("http://athena3.fit.vutbr.cz/twitterstorm/dump.json"+dumpId).openStream()));
+			reader=new BufferedReader(new InputStreamReader(new URL("http://athena3.fit.vutbr.cz/twitterstorm/dump.json"+dumpId+"test").openStream()));
 		} catch (MalformedURLException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
