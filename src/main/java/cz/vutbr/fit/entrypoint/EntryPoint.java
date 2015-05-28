@@ -296,7 +296,36 @@ public class EntryPoint {
         
         long monitor=1000/granularity;
         long counter=0;
-
+        
+        Request dumpControl=null;
+        Request dumpData=null;
+        Request filterControl1=null;
+        Request filterData1=null;
+        Request filterControl2=null;
+        Request filterData2=null;
+        Request tokenizerControl=null;
+        Request tokenizerData=null;
+        Request splitterControl=null;
+        Request splitterData=null;
+        Request posControl1=null;
+        Request posData1=null;
+        Request posControl2=null;
+        Request posData2=null;
+        Request posControl3=null;
+        Request posData3=null;
+        Request posControl4=null;
+        Request posData4=null;
+        Request genderControl=null;
+        Request genderData=null;
+        Request lemmaControl=null;
+        Request lemmaData=null;
+        Request nerControl=null;
+        Request nerData=null;
+        Request parserControl=null;
+        Request parserData=null;
+        Request sentimentControl=null;
+        Request sentimentData=null;
+        
         while (true){
         	//boolean monitorThisTime=counter%monitor==0;
         	boolean monitorThisTime=true;
@@ -309,16 +338,29 @@ public class EntryPoint {
 	                aggregatedMessage[1]=myrank;
 	        		int to=rn.nextInt(filters)+filterNodes[0];
 	        		//System.out.println("Dump sending data");
-	        		MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, to, 0);
-	        		MPI.COMM_WORLD.send(bytes, bytes.length, MPI.BYTE, to, 1);
+	        		IntBuffer controlBuffer=IntBuffer.wrap(aggregatedMessage);
+	        		ByteBuffer dataBuffer=ByteBuffer.wrap(bytes);
+	        		//MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, to, 0);
+	        		//MPI.COMM_WORLD.send(bytes, bytes.length, MPI.BYTE, to, 1);
+	        		
+	        		
+	        		if (dumpControl!=null)
+	        			dumpControl.waitFor();
+	        		dumpControl=MPI.COMM_WORLD.iSend(controlBuffer, 2, MPI.INT, to, 0);
+	        		if (dumpData!=null)
+	        			dumpData.waitFor();
+	        		dumpData=MPI.COMM_WORLD.iSend(dataBuffer, bytes.length, MPI.BYTE, to, 1);
 
         		}
         		else{
         			//System.out.println("Dump finished");
         			aggregatedMessage[0]=-1;
         			aggregatedMessage[1]=myrank;
+        			IntBuffer controlBuffer=IntBuffer.wrap(aggregatedMessage);
+        			if (dumpControl!=null)
+	        			dumpControl.waitFor();
         			for (int j=0;j<filterNodes.length;j++)
-        				MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, filterNodes[j], 0);
+        				MPI.COMM_WORLD.iSend(controlBuffer, 2, MPI.INT, filterNodes[j], 0);
         			break;
         		}
     		}
@@ -328,7 +370,10 @@ public class EntryPoint {
     			if (monitorThisTime)
     				toFilter.receiveStarts();
     			//System.out.println("Before receive info filter "+myrank);
-    			MPI.COMM_WORLD.recv(aggregatedMessage, 2, MPI.INT, MPI.ANY_SOURCE, 0);
+    			IntBuffer controlBuffer=IntBuffer.allocate(2);
+    			Request controlArrived=MPI.COMM_WORLD.iRecv(controlBuffer, 2, MPI.INT, MPI.ANY_SOURCE, 0);
+    			controlArrived.waitFor();
+    			controlBuffer.get(aggregatedMessage);
     			//System.out.println("After receive info filter "+myrank);
     			if (monitorThisTime)
     				programInstanceSensor.subtract(toFilter.receiveEnds());
@@ -338,10 +383,15 @@ public class EntryPoint {
         				programInstanceSensor.programEnds();
     				if (waitingFilters==0){
     					aggregatedMessage[1]=myrank;
+    					if (filterControl1!=null)
+    						filterControl1.waitFor();
+    					controlBuffer=IntBuffer.wrap(aggregatedMessage);
     					for (int j=0;j<tokenizerNodes.length;j++)
-            				MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, tokenizerNodes[j], 2);
+            				MPI.COMM_WORLD.iSend(controlBuffer, 2, MPI.INT, tokenizerNodes[j], 2);
+    					if (filterControl2!=null)
+    						filterControl2.waitFor();
     					for (int j=0;j<indexNodes.length;j++)
-            				MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, indexNodes[j], 18);
+            				MPI.COMM_WORLD.iSend(controlBuffer, 2, MPI.INT, indexNodes[j], 18);
             			break;
     				}
     			}
@@ -350,7 +400,10 @@ public class EntryPoint {
     				if (monitorThisTime)
         				toFilter.receiveStarts();
     				//System.out.println("Before receive data filter "+myrank);
-	        		MPI.COMM_WORLD.recv(bytes, aggregatedMessage[0], MPI.BYTE, aggregatedMessage[1], 1);
+    				ByteBuffer dataBuffer=ByteBuffer.allocate(aggregatedMessage[0]);
+	        		Request dataArrived=MPI.COMM_WORLD.iRecv(dataBuffer, aggregatedMessage[0], MPI.BYTE, aggregatedMessage[1], 1);
+	        		dataArrived.waitFor();
+	        		dataBuffer.get(bytes);
 	        		//System.out.println("After receive data filter "+myrank);
 	        		Output in=(Output)array2obj(bytes);
 	        		if (monitorThisTime)
@@ -364,19 +417,44 @@ public class EntryPoint {
 		                aggregatedMessage[1]=myrank;
 		                int to=rn.nextInt(tokenizers)+tokenizerNodes[0];
 		                
-		                MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, to, 2);
-		        		MPI.COMM_WORLD.send(sendBytes, sendBytes.length, MPI.BYTE, to, 3);
+		                controlBuffer=IntBuffer.wrap(aggregatedMessage);
+		                dataBuffer=ByteBuffer.wrap(sendBytes);
+		                
+		                //MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, to, 2);
+		        		//MPI.COMM_WORLD.send(sendBytes, sendBytes.length, MPI.BYTE, to, 3);
 		        		
 		        		String hashId=out.getId();
 		        		byte[] hashBytes=hashId.getBytes();
         	            int hash=hasher.hash(hashBytes, 0,hashBytes.length,seed);
-        	            to=hash%indexes;
-        	            if (to<0)
-        	            	to+=indexes;
-        	            to+=indexNodes[0];
+        	            int newTo=hash%indexes;
+        	            if (newTo<0)
+        	            	newTo+=indexes;
+        	            newTo+=indexNodes[0];
         	            
-        	            MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, to, 18);
-		        		MPI.COMM_WORLD.send(sendBytes, sendBytes.length, MPI.BYTE, to, 19);
+        	            //MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, to, 18);
+		        		//MPI.COMM_WORLD.send(sendBytes, sendBytes.length, MPI.BYTE, to, 19);
+        	            
+        	            filterControl1=MPI.COMM_WORLD.iSend(controlBuffer, 2, MPI.INT, to, 2);
+        	            filterControl2=MPI.COMM_WORLD.iSend(controlBuffer, 2, MPI.INT, newTo, 18);
+        	            
+        	            boolean firstOK=false;
+        	            boolean secondOK=false;
+        	            
+        	            while (!firstOK || !secondOK){
+        	            	if (!firstOK){
+        	            		if (filterControl1.test() && (filterData1==null || filterData1.test())){
+        	            			firstOK=true;
+        	            			filterData1=MPI.COMM_WORLD.iSend(dataBuffer, sendBytes.length, MPI.BYTE, to, 3);
+        	            		}
+        	            	}
+        	            	if (!secondOK){
+        	            		if (filterControl2.test() && (filterData2==null || filterData2.test())){
+    	            				secondOK=true;
+    	            				filterData2=MPI.COMM_WORLD.iSend(dataBuffer, sendBytes.length, MPI.BYTE, newTo, 19);
+        	            		}
+        	            	}
+        	            }
+        	            
 	        		}
     			}
     		}
@@ -386,7 +464,10 @@ public class EntryPoint {
     			if (monitorThisTime)
     				toGender.receiveStarts();
     			//System.out.println("Before receive info gender "+myrank);
-    			MPI.COMM_WORLD.recv(aggregatedMessage, 2, MPI.INT, MPI.ANY_SOURCE, 8);
+    			IntBuffer controlBuffer=IntBuffer.allocate(2);
+    			Request controlArrived=MPI.COMM_WORLD.iRecv(controlBuffer, 2, MPI.INT, MPI.ANY_SOURCE, 8);
+    			controlArrived.waitFor();
+    			controlBuffer.get(aggregatedMessage);
     			//System.out.println("After receive info gender "+myrank);
     			if (monitorThisTime)
     				programInstanceSensor.subtract(toGender.receiveEnds());
@@ -396,8 +477,11 @@ public class EntryPoint {
         				programInstanceSensor.programEnds();
     				if (waitingGenders==0){
     					aggregatedMessage[1]=myrank;
+    					if (genderControl!=null)
+    						genderControl.waitFor();
+    					controlBuffer=IntBuffer.wrap(aggregatedMessage);
     					for (int j=0;j<indexNodes.length;j++)
-            				MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, indexNodes[j], 18);
+            				MPI.COMM_WORLD.iSend(controlBuffer, 2, MPI.INT, indexNodes[j], 18);
             			break;
     				}
     			}
@@ -406,7 +490,10 @@ public class EntryPoint {
     				if (monitorThisTime)
         				toGender.receiveStarts();
     				//System.out.println("Before receive data gender "+myrank);
-	        		MPI.COMM_WORLD.recv(bytes, aggregatedMessage[0], MPI.BYTE, aggregatedMessage[1], 9);
+    				ByteBuffer dataBuffer=ByteBuffer.allocate(aggregatedMessage[0]);
+	        		Request dataArrived=MPI.COMM_WORLD.iRecv(dataBuffer, aggregatedMessage[0], MPI.BYTE, aggregatedMessage[1], 9);
+	        		dataArrived.waitFor();
+	        		dataBuffer.get(bytes);
 	        		//System.out.println("After receive data gender "+myrank);
 	        		Output in=(Output)array2obj(bytes);
 	        		if (monitorThisTime)
@@ -426,8 +513,14 @@ public class EntryPoint {
         	            if (to<0)
         	            	to+=indexes;
         	            to+=indexNodes[0];
-        	            MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, to, 18);
-		        		MPI.COMM_WORLD.send(sendBytes, sendBytes.length, MPI.BYTE, to, 19);
+        	            controlBuffer=IntBuffer.wrap(aggregatedMessage);
+        	            dataBuffer=ByteBuffer.wrap(sendBytes);
+        	            if (genderControl!=null)
+        	            	genderControl.waitFor();
+        	            genderControl=MPI.COMM_WORLD.iSend(controlBuffer, 2, MPI.INT, to, 18);
+        	            if (genderData!=null)
+        	            	genderData.waitFor();
+		        		genderData=MPI.COMM_WORLD.iSend(dataBuffer, sendBytes.length, MPI.BYTE, to, 19);
 	        		}
     			}
     		}
@@ -437,9 +530,11 @@ public class EntryPoint {
     			if (monitorThisTime)
     				toIndex.receiveStarts();
 
-    			
+    			IntBuffer controlBuffer=IntBuffer.allocate(2);
     			//System.out.println("Before receive info index "+myrank);
-    			MPI.COMM_WORLD.recv(aggregatedMessage, 2, MPI.INT, MPI.ANY_SOURCE, 18);
+    			Request controlArrived=MPI.COMM_WORLD.iRecv(controlBuffer, 2, MPI.INT, MPI.ANY_SOURCE, 18);
+    			controlArrived.waitFor();
+    			controlBuffer.get(aggregatedMessage);
     			//System.out.println("After receive info index "+myrank);
     			if (monitorThisTime)
     				programInstanceSensor.subtract(toIndex.receiveEnds());
@@ -455,8 +550,11 @@ public class EntryPoint {
     				byte[] bytes=new byte[aggregatedMessage[0]];
     				if (monitorThisTime)
         				toIndex.receiveStarts();
+    				ByteBuffer dataBuffer=ByteBuffer.allocate(aggregatedMessage[0]);
     				//System.out.println("Before receive data index "+myrank);
-	        		MPI.COMM_WORLD.recv(bytes, aggregatedMessage[0], MPI.BYTE, aggregatedMessage[1], 19);
+	        		Request dataArrived=MPI.COMM_WORLD.iRecv(dataBuffer, aggregatedMessage[0], MPI.BYTE, aggregatedMessage[1], 19);
+	        		dataArrived.waitFor();
+	        		dataBuffer.get(bytes);
 	        		//System.out.println("After receive data index "+myrank);
 	        		Output in=(Output)array2obj(bytes);
 	        		if (monitorThisTime)
@@ -472,7 +570,10 @@ public class EntryPoint {
     			if (monitorThisTime)
     				toLemma.receiveStarts();
     			//System.out.println("Before receive info lemma "+myrank);
-    			MPI.COMM_WORLD.recv(aggregatedMessage, 2, MPI.INT, MPI.ANY_SOURCE, 10);
+    			IntBuffer controlBuffer=IntBuffer.allocate(2);
+    			Request controlArrived=MPI.COMM_WORLD.iRecv(controlBuffer, 2, MPI.INT, MPI.ANY_SOURCE, 10);
+    			controlArrived.waitFor();
+    			controlBuffer.get(aggregatedMessage);
     			//System.out.println("After receive info lemma "+myrank);
     			if (monitorThisTime)
     				programInstanceSensor.subtract(toLemma.receiveEnds());
@@ -482,8 +583,11 @@ public class EntryPoint {
         				programInstanceSensor.programEnds();
     				if (waitingLemmas==0){
     					aggregatedMessage[1]=myrank;
+    					if (lemmaControl!=null)
+    						lemmaControl.waitFor();
+    					controlBuffer=IntBuffer.wrap(aggregatedMessage);
     					for (int j=0;j<indexNodes.length;j++)
-            				MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, indexNodes[j], 18);
+            				MPI.COMM_WORLD.iSend(controlBuffer, 2, MPI.INT, indexNodes[j], 18);
             			break;
     				}
     			}
@@ -491,9 +595,13 @@ public class EntryPoint {
     				byte[] bytes=new byte[aggregatedMessage[0]];
     				if (monitorThisTime)
         				toLemma.receiveStarts();
+    				ByteBuffer dataBuffer=ByteBuffer.allocate(aggregatedMessage[2]);
     				//System.out.println("Before receive data lemma "+myrank);
-	        		MPI.COMM_WORLD.recv(bytes, aggregatedMessage[0], MPI.BYTE, aggregatedMessage[1], 11);
+	        		Request dataArrived=MPI.COMM_WORLD.iRecv(dataBuffer, aggregatedMessage[0], MPI.BYTE, aggregatedMessage[1], 11);
+	        		dataArrived.waitFor();
+	        		dataBuffer.get(bytes);
 	        		//System.out.println("After receive data lemma "+myrank);
+	        		
 	        		Output in=(Output)array2obj(bytes);
 	        		if (monitorThisTime)
 	    				programInstanceSensor.subtract(toLemma.receiveEnds());
@@ -512,8 +620,15 @@ public class EntryPoint {
         	            if (to<0)
         	            	to+=indexes;
         	            to+=indexNodes[0];
-        	            MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, to, 18);
-		        		MPI.COMM_WORLD.send(sendBytes, sendBytes.length, MPI.BYTE, to, 19);
+        	            
+        	            controlBuffer=IntBuffer.wrap(aggregatedMessage);
+        	            dataBuffer=ByteBuffer.wrap(sendBytes);
+        	            if (lemmaControl!=null)
+        	            	lemmaControl.waitFor();
+        	            lemmaControl=MPI.COMM_WORLD.iSend(controlBuffer, 2, MPI.INT, to, 18);
+        	            if (lemmaData!=null)
+        	            	lemmaData.waitFor();
+		        		lemmaData=MPI.COMM_WORLD.iSend(dataBuffer, sendBytes.length, MPI.BYTE, to, 19);
 	        		}
     			}
 
@@ -523,8 +638,12 @@ public class EntryPoint {
     				programInstanceSensor.programStarts();
     			if (monitorThisTime)
     				toNer.receiveStarts();
+    			
+    			IntBuffer controlBuffer=IntBuffer.allocate(2);
     			//System.out.println("Before receive info ner "+myrank);
-    			MPI.COMM_WORLD.recv(aggregatedMessage, 2, MPI.INT, MPI.ANY_SOURCE, 12);
+    			Request controlArrived=MPI.COMM_WORLD.iRecv(controlBuffer, 2, MPI.INT, MPI.ANY_SOURCE, 12);
+    			controlArrived.waitFor();
+    			controlBuffer.get(aggregatedMessage);
     			//System.out.println("After receive info ner "+myrank);
     			if (monitorThisTime)
     				programInstanceSensor.subtract(toNer.receiveEnds());
@@ -534,8 +653,11 @@ public class EntryPoint {
         				programInstanceSensor.programEnds();
     				if (waitingNers==0){
     					aggregatedMessage[1]=myrank;
+    					if (nerControl!=null)
+    						nerControl.waitFor();
+    					controlBuffer=IntBuffer.wrap(aggregatedMessage);
     					for (int j=0;j<indexNodes.length;j++)
-            				MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, indexNodes[j], 18);
+            				MPI.COMM_WORLD.iSend(controlBuffer, 2, MPI.INT, indexNodes[j], 18);
             			break;
     				}
     			}
@@ -543,8 +665,11 @@ public class EntryPoint {
     				byte[] bytes=new byte[aggregatedMessage[0]];
     				if (monitorThisTime)
         				toNer.receiveStarts();
+    				ByteBuffer dataBuffer=ByteBuffer.allocate(aggregatedMessage[0]);
     				//System.out.println("Before receive data ner "+myrank);
-	        		MPI.COMM_WORLD.recv(bytes, aggregatedMessage[0], MPI.BYTE, aggregatedMessage[1], 13);
+	        		Request dataArrived=MPI.COMM_WORLD.iRecv(dataBuffer, aggregatedMessage[0], MPI.BYTE, aggregatedMessage[1], 13);
+	        		dataArrived.waitFor();
+	        		dataBuffer.get(bytes);
 	        		//System.out.println("After receive data ner "+myrank);
 	        		Output in=(Output)array2obj(bytes);
 	        		if (monitorThisTime)
@@ -564,8 +689,15 @@ public class EntryPoint {
         	            if (to<0)
         	            	to+=indexes;
         	            to+=indexNodes[0];
-        	            MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, to, 18);
-		        		MPI.COMM_WORLD.send(sendBytes, sendBytes.length, MPI.BYTE, to, 19);
+        	            
+        	            controlBuffer=IntBuffer.wrap(aggregatedMessage);
+        	            dataBuffer=ByteBuffer.wrap(sendBytes);
+        	            if (nerControl!=null)
+        	            	nerControl.waitFor();
+        	            nerControl=MPI.COMM_WORLD.iSend(controlBuffer, 2, MPI.INT, to, 18);
+        	            if (nerData!=null)
+        	            	nerData.waitFor();
+		        		nerData=MPI.COMM_WORLD.iSend(dataBuffer, sendBytes.length, MPI.BYTE, to, 19);
 	        		}
     			}
     		}
@@ -574,8 +706,11 @@ public class EntryPoint {
     				programInstanceSensor.programStarts();
     			if (monitorThisTime)
     				toParser.receiveStarts();
+    			IntBuffer controlBuffer=IntBuffer.allocate(2);
     			//System.out.println("Before receive info parser "+myrank);
-    			MPI.COMM_WORLD.recv(aggregatedMessage, 2, MPI.INT, MPI.ANY_SOURCE, 14);
+    			Request controlArrived=MPI.COMM_WORLD.iRecv(controlBuffer, 2, MPI.INT, MPI.ANY_SOURCE, 14);
+    			controlArrived.waitFor();
+    			controlBuffer.get(aggregatedMessage);
     			//System.out.println("After receive info parser "+myrank);
     			if (monitorThisTime)
     				programInstanceSensor.subtract(toParser.receiveEnds());
@@ -585,8 +720,11 @@ public class EntryPoint {
         				programInstanceSensor.programEnds();
     				if (waitingParsers==0){
     					aggregatedMessage[1]=myrank;
+    					if (parserControl!=null)
+    						parserControl.waitFor();
+    					controlBuffer=IntBuffer.wrap(aggregatedMessage);
     					for (int j=0;j<sentimentNodes.length;j++)
-            				MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, sentimentNodes[j], 16);
+            				MPI.COMM_WORLD.iSend(controlBuffer, 2, MPI.INT, sentimentNodes[j], 16);
             			break;
     				}
     			}
@@ -594,8 +732,11 @@ public class EntryPoint {
     				byte[] bytes=new byte[aggregatedMessage[0]];
     				if (monitorThisTime)
         				toParser.receiveStarts();
+    				ByteBuffer dataBuffer=ByteBuffer.allocate(2);
     				//System.out.println("Before receive data parser "+myrank);
-	        		MPI.COMM_WORLD.recv(bytes, aggregatedMessage[0], MPI.BYTE, aggregatedMessage[1], 15);
+	        		Request dataArrived=MPI.COMM_WORLD.iRecv(dataBuffer, aggregatedMessage[0], MPI.BYTE, aggregatedMessage[1], 15);
+	        		dataArrived.waitFor();
+	        		dataBuffer.get(bytes);
 	        		//System.out.println("After receive data parser "+myrank);
 	        		Output in=(Output)array2obj(bytes);
 	        		if (monitorThisTime)
@@ -609,8 +750,16 @@ public class EntryPoint {
 		                aggregatedMessage[1]=myrank;
 
 		        		int to = rn.nextInt(sentiments)+sentimentNodes[0];
-        	            MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, to, 16);
-		        		MPI.COMM_WORLD.send(sendBytes, sendBytes.length, MPI.BYTE, to, 17);
+		        		
+		        		controlBuffer=IntBuffer.wrap(aggregatedMessage);
+		        		dataBuffer=ByteBuffer.wrap(sendBytes);
+		        		
+		        		if (parserControl!=null)
+		        			parserControl.waitFor();
+        	            parserControl=MPI.COMM_WORLD.iSend(controlBuffer, 2, MPI.INT, to, 16);
+        	            if (parserData!=null)
+        	            	parserData.waitFor();
+		        		parserData=MPI.COMM_WORLD.iSend(dataBuffer, sendBytes.length, MPI.BYTE, to, 17);
 	        		}
     			}
 
@@ -620,8 +769,11 @@ public class EntryPoint {
     				programInstanceSensor.programStarts();
     			if (monitorThisTime)
     				toPos.receiveStarts();
+    			IntBuffer controlBuffer=IntBuffer.allocate(2);
     			//System.out.println("Before receive info pos "+myrank);
-    			MPI.COMM_WORLD.recv(aggregatedMessage, 2, MPI.INT, MPI.ANY_SOURCE, 6);
+    			Request controlArrived=MPI.COMM_WORLD.iRecv(controlBuffer, 2, MPI.INT, MPI.ANY_SOURCE, 6);
+    			controlArrived.waitFor();
+    			controlBuffer.get(aggregatedMessage);
     			//System.out.println("After receive info pos "+myrank);
     			if (monitorThisTime)
     				programInstanceSensor.subtract(toPos.receiveEnds());
@@ -631,14 +783,23 @@ public class EntryPoint {
         				programInstanceSensor.programEnds();
     				if (waitingPoses==0){
     					aggregatedMessage[1]=myrank;
+    					controlBuffer=IntBuffer.wrap(aggregatedMessage);
+    					if (posControl1!=null)
+    						posControl1.waitFor();
     					for (int j=0;j<genderNodes.length;j++)
-            				MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, genderNodes[j], 8);
+            				MPI.COMM_WORLD.iSend(controlBuffer, 2, MPI.INT, genderNodes[j], 8);
+    					if (posControl2!=null)
+    						posControl2.waitFor();
     					for (int j=0;j<lemmaNodes.length;j++)
-            				MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, lemmaNodes[j], 10);
+            				MPI.COMM_WORLD.iSend(controlBuffer, 2, MPI.INT, lemmaNodes[j], 10);
+    					if (posControl3!=null)
+    						posControl3.waitFor();
     					for (int j=0;j<nerNodes.length;j++)
-            				MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, nerNodes[j], 12);
+            				MPI.COMM_WORLD.iSend(controlBuffer, 2, MPI.INT, nerNodes[j], 12);
+    					if (posControl4!=null)
+    						posControl4.waitFor();
     					for (int j=0;j<parserNodes.length;j++)
-            				MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, parserNodes[j], 14);
+            				MPI.COMM_WORLD.iSend(controlBuffer, 2, MPI.INT, parserNodes[j], 14);
             			break;
     				}
     			}
@@ -646,8 +807,11 @@ public class EntryPoint {
     				byte[] bytes=new byte[aggregatedMessage[0]];
     				if (monitorThisTime)
         				toPos.receiveStarts();
+    				ByteBuffer dataBuffer=ByteBuffer.allocate(aggregatedMessage[0]);
     				//System.out.println("Before receive data pos "+myrank);
-	        		MPI.COMM_WORLD.recv(bytes, aggregatedMessage[0], MPI.BYTE, aggregatedMessage[1], 7);
+	        		Request dataArrived=MPI.COMM_WORLD.iRecv(dataBuffer, aggregatedMessage[0], MPI.BYTE, aggregatedMessage[1], 7);
+	        		dataArrived.waitFor();
+	        		dataBuffer.get(bytes);
 	        		//System.out.println("After receive data pos "+myrank);
 	        		Output in=(Output)array2obj(bytes);
 	        		if (monitorThisTime)
@@ -659,22 +823,50 @@ public class EntryPoint {
 	        			byte[] sendBytes = obj2array(out);
 		                aggregatedMessage[0]=sendBytes.length;
 		                aggregatedMessage[1]=myrank;
-		                int to=rn.nextInt(genders)+genderNodes[0];
+		                int genderTo=rn.nextInt(genders)+genderNodes[0];
+		                int lemmaTo=rn.nextInt(lemmas)+lemmaNodes[0];
+		                int nerTo=rn.nextInt(ners)+nerNodes[0];
+		                int parserTo=rn.nextInt(parsers)+parserNodes[0];
+		                controlBuffer=IntBuffer.wrap(aggregatedMessage);
 		                
-		                MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, to, 8);
-		        		MPI.COMM_WORLD.send(sendBytes, sendBytes.length, MPI.BYTE, to, 9);
-		        		
-		        		to = rn.nextInt(lemmas)+lemmaNodes[0];
-		        		MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, to, 10);
-		        		MPI.COMM_WORLD.send(sendBytes, sendBytes.length, MPI.BYTE, to, 11);
-		        		
-		        		to = rn.nextInt(ners)+nerNodes[0];
-		        		MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, to, 12);
-		        		MPI.COMM_WORLD.send(sendBytes, sendBytes.length, MPI.BYTE, to, 13);
-		        		
-		        		to = rn.nextInt(parsers)+parserNodes[0];
-		        		MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, to, 14);
-		        		MPI.COMM_WORLD.send(sendBytes, sendBytes.length, MPI.BYTE, to, 15);
+		                
+		                posControl1=MPI.COMM_WORLD.iSend(controlBuffer, 2, MPI.INT, genderTo, 8);
+		                posControl2=MPI.COMM_WORLD.iSend(controlBuffer, 2, MPI.INT, lemmaTo, 10);
+		                posControl3=MPI.COMM_WORLD.iSend(controlBuffer, 2, MPI.INT, nerTo, 12);
+		                posControl4=MPI.COMM_WORLD.iSend(controlBuffer, 2, MPI.INT, parserTo, 14);
+        	            
+        	            boolean firstOK=false;
+        	            boolean secondOK=false;
+        	            boolean thirdOK=false;
+        	            boolean fourthOK=false;
+        	            
+        	            while (!firstOK || !secondOK || !thirdOK || !fourthOK){
+        	            	if (!firstOK){
+        	            		if (posControl1.test() && (posData1==null || posData1.test())){
+        	            			firstOK=true;
+        	            			posData1=MPI.COMM_WORLD.iSend(dataBuffer, sendBytes.length, MPI.BYTE, genderTo, 9);
+        	            		}
+        	            	}
+        	            	if (!secondOK){
+        	            		if (posControl2.test() && (posData2==null || posData2.test())){
+        	            			secondOK=true;
+        	            			posData2=MPI.COMM_WORLD.iSend(dataBuffer, sendBytes.length, MPI.BYTE, lemmaTo, 11);
+        	            		}
+        	            	}
+        	            	if (!thirdOK){
+        	            		if (posControl3.test() && (posData3==null || posData3.test())){
+        	            			thirdOK=true;
+        	            			posData3=MPI.COMM_WORLD.iSend(dataBuffer, sendBytes.length, MPI.BYTE, nerTo, 13);
+        	            		}
+        	            	}
+        	            	if (!fourthOK){
+        	            		if (posControl4.test() && (posData4==null || posData4.test())){
+        	            			fourthOK=true;
+        	            			posData4=MPI.COMM_WORLD.iSend(dataBuffer, sendBytes.length, MPI.BYTE, parserTo, 15);
+        	            		}
+        	            	}
+        	            	
+        	            }
 	        		}
     			}
     		}
@@ -683,8 +875,11 @@ public class EntryPoint {
     				programInstanceSensor.programStarts();
     			if (monitorThisTime)
     				toSplit.receiveStarts();
+    			IntBuffer controlBuffer=IntBuffer.allocate(2);
     			//System.out.println("Before receive info splitter "+myrank);
-    			MPI.COMM_WORLD.recv(aggregatedMessage, 2, MPI.INT, MPI.ANY_SOURCE, 4);
+    			Request controlArrived=MPI.COMM_WORLD.iRecv(controlBuffer, 2, MPI.INT, MPI.ANY_SOURCE, 4);
+    			controlArrived.waitFor();
+    			controlBuffer.get(aggregatedMessage);
     			//System.out.println("After receive info splitter "+myrank);
     			if (monitorThisTime)
     				programInstanceSensor.subtract(toSplit.receiveEnds());
@@ -694,8 +889,11 @@ public class EntryPoint {
         				programInstanceSensor.programEnds();
     				if (waitingSplitters==0){
     					aggregatedMessage[1]=myrank;
+    					controlBuffer=IntBuffer.wrap(aggregatedMessage);
+    					if (splitterControl!=null)
+    						splitterControl.waitFor();
     					for (int j=0;j<posNodes.length;j++)
-            				MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, posNodes[j], 6);
+            				MPI.COMM_WORLD.iSend(controlBuffer, 2, MPI.INT, posNodes[j], 6);
             			break;
     				}
     			}
@@ -703,8 +901,11 @@ public class EntryPoint {
     				byte[] bytes=new byte[aggregatedMessage[0]];
     				if (monitorThisTime)
         				toSplit.receiveStarts();
+    				ByteBuffer dataBuffer=ByteBuffer.allocate(aggregatedMessage[0]);
     				//System.out.println("Before receive data splitter "+myrank);
-	        		MPI.COMM_WORLD.recv(bytes, aggregatedMessage[0], MPI.BYTE, aggregatedMessage[1], 5);
+	        		Request dataArrived=MPI.COMM_WORLD.iRecv(dataBuffer, aggregatedMessage[0], MPI.BYTE, aggregatedMessage[1], 5);
+	        		dataArrived.waitFor();
+	        		dataBuffer.get(bytes);
 	        		//System.out.println("After receive data splitter "+myrank);
 	        		Output in=(Output)array2obj(bytes);
 	        		if (monitorThisTime)
@@ -718,8 +919,15 @@ public class EntryPoint {
 		                aggregatedMessage[1]=myrank;
 		                int to=rn.nextInt(poses)+posNodes[0];
 		                
-		                MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, to, 6);
-		        		MPI.COMM_WORLD.send(sendBytes, sendBytes.length, MPI.BYTE, to, 7);
+		                controlBuffer=IntBuffer.wrap(aggregatedMessage);
+		                dataBuffer=ByteBuffer.wrap(sendBytes);
+		                
+		                if (splitterControl!=null)
+		                	splitterControl.waitFor();
+		                splitterControl=MPI.COMM_WORLD.iSend(controlBuffer, 2, MPI.INT, to, 6);
+		                if (splitterData!=null)
+		                	splitterData.waitFor();
+		        		splitterData=MPI.COMM_WORLD.iSend(dataBuffer, sendBytes.length, MPI.BYTE, to, 7);
 	        		}
     			}
     		}
@@ -728,8 +936,11 @@ public class EntryPoint {
     				programInstanceSensor.programStarts();
     			if (monitorThisTime)
     				toSentiment.receiveStarts();
+    			IntBuffer controlBuffer=IntBuffer.allocate(2);
     			//System.out.println("Before receive info sentiment "+myrank);
-    			MPI.COMM_WORLD.recv(aggregatedMessage, 2, MPI.INT, MPI.ANY_SOURCE, 16);
+    			Request controlArrived=MPI.COMM_WORLD.iRecv(controlBuffer, 2, MPI.INT, MPI.ANY_SOURCE, 16);
+    			controlArrived.waitFor();
+    			controlBuffer.get(aggregatedMessage);
     			//System.out.println("After receive info sentiment "+myrank);
     			if (monitorThisTime)
     				programInstanceSensor.subtract(toSentiment.receiveEnds());
@@ -739,8 +950,11 @@ public class EntryPoint {
         				programInstanceSensor.programEnds();
     				if (waitingSentiments==0){
     					aggregatedMessage[1]=myrank;
+    					if (sentimentControl!=null)
+    						sentimentControl.waitFor();
+    					controlBuffer=IntBuffer.wrap(aggregatedMessage);
     					for (int j=0;j<indexNodes.length;j++)
-            				MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, indexNodes[j], 18);
+            				MPI.COMM_WORLD.iSend(controlBuffer, 2, MPI.INT, indexNodes[j], 18);
             			break;
     				}
     			}
@@ -748,8 +962,11 @@ public class EntryPoint {
     				byte[] bytes=new byte[aggregatedMessage[0]];
     				if (monitorThisTime)
         				toSentiment.receiveStarts();
+    				ByteBuffer dataBuffer=ByteBuffer.allocate(aggregatedMessage[0]);
     				//System.out.println("Before receive data sentiment "+myrank);
-	        		MPI.COMM_WORLD.recv(bytes, aggregatedMessage[0], MPI.BYTE, aggregatedMessage[1], 17);
+	        		Request dataArrived=MPI.COMM_WORLD.iRecv(dataBuffer, aggregatedMessage[0], MPI.BYTE, aggregatedMessage[1], 17);
+	        		dataArrived.waitFor();
+	        		dataBuffer.get(bytes);
 	        		//System.out.println("After receive data sentiment "+myrank);
 	        		Output in=(Output)array2obj(bytes);
 	        		if (monitorThisTime)
@@ -769,8 +986,16 @@ public class EntryPoint {
         	            if (to<0)
         	            	to+=indexes;
         	            to+=indexNodes[0];
-        	            MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, to, 18);
-		        		MPI.COMM_WORLD.send(sendBytes, sendBytes.length, MPI.BYTE, to, 19);
+        	            
+        	            controlBuffer=IntBuffer.wrap(aggregatedMessage);
+        	            dataBuffer=ByteBuffer.wrap(sendBytes);
+        	            
+        	            if (sentimentControl!=null)
+        	            	sentimentControl.waitFor();
+        	            sentimentControl=MPI.COMM_WORLD.iSend(controlBuffer, 2, MPI.INT, to, 18);
+        	            if (sentimentData!=null)
+        	            	sentimentData.waitFor();
+		        		sentimentData=MPI.COMM_WORLD.iSend(dataBuffer, sendBytes.length, MPI.BYTE, to, 19);
 	        		}
     			}
 
@@ -780,8 +1005,11 @@ public class EntryPoint {
     				programInstanceSensor.programStarts();
     			if (monitorThisTime)
     				toTokenizer.receiveStarts();
+    			IntBuffer controlBuffer=IntBuffer.allocate(2);
     			//System.out.println("Before receive info tokenize "+myrank);
-    			MPI.COMM_WORLD.recv(aggregatedMessage, 2, MPI.INT, MPI.ANY_SOURCE, 2);
+    			Request controlArrived=MPI.COMM_WORLD.iRecv(controlBuffer, 2, MPI.INT, MPI.ANY_SOURCE, 2);
+    			controlArrived.waitFor();
+    			controlBuffer.get(aggregatedMessage);
     			//System.out.println("After receive info tokenize "+myrank);
     			if (monitorThisTime)
     				programInstanceSensor.subtract(toTokenizer.receiveEnds());
@@ -791,8 +1019,11 @@ public class EntryPoint {
         				programInstanceSensor.programEnds();
     				if (waitingTokenizers==0){
     					aggregatedMessage[1]=myrank;
+    					if (tokenizerControl!=null)
+    						tokenizerControl.waitFor();
+    					controlBuffer=IntBuffer.wrap(aggregatedMessage);
     					for (int j=0;j<splitterNodes.length;j++)
-            				MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, splitterNodes[j], 4);
+            				MPI.COMM_WORLD.iSend(controlBuffer, 2, MPI.INT, splitterNodes[j], 4);
             			break;
     				}
     			}
@@ -800,8 +1031,11 @@ public class EntryPoint {
     				byte[] bytes=new byte[aggregatedMessage[0]];
     				if (monitorThisTime)
         				toTokenizer.receiveStarts();
+    				ByteBuffer dataBuffer=ByteBuffer.allocate(aggregatedMessage[0]);
     				//System.out.println("Before receive data tokenize "+myrank);
-	        		MPI.COMM_WORLD.recv(bytes, aggregatedMessage[0], MPI.BYTE, aggregatedMessage[1], 3);	
+	        		Request dataArrived=MPI.COMM_WORLD.iRecv(dataBuffer, aggregatedMessage[0], MPI.BYTE, aggregatedMessage[1], 3);	
+	        		dataArrived.waitFor();
+	        		dataBuffer.get(bytes);
 	        		//System.out.println("After receive data tokenize "+myrank);
 	        		Output in=(Output)array2obj(bytes);
 	        		if (monitorThisTime)
@@ -815,8 +1049,15 @@ public class EntryPoint {
 		                aggregatedMessage[1]=myrank;
 		                int to=rn.nextInt(splitters)+splitterNodes[0];
 		                
-		                MPI.COMM_WORLD.send(aggregatedMessage, 2, MPI.INT, to, 4);
-		        		MPI.COMM_WORLD.send(sendBytes, sendBytes.length, MPI.BYTE, to, 5);
+		                controlBuffer=IntBuffer.wrap(aggregatedMessage);
+		                dataBuffer=ByteBuffer.wrap(sendBytes);
+		                
+		                if (tokenizerControl!=null)
+		                	tokenizerControl.waitFor();
+		                tokenizerControl=MPI.COMM_WORLD.iSend(controlBuffer, 2, MPI.INT, to, 4);
+		                if (tokenizerData!=null)
+		                	tokenizerData.waitFor();
+		        		tokenizerData=MPI.COMM_WORLD.iSend(dataBuffer, sendBytes.length, MPI.BYTE, to, 5);
 	        		}
     			}
     		}
