@@ -15,6 +15,8 @@ public class Tokenizer {
 	}
 	
 	public Output execute(Output in){
+		if (in==null)
+			return null;
 		List<Tweet> data=(List<Tweet>) in.getData();
 		for (int i=0;i<data.size();i++){
 			tokenizer.annotate(data.get(i).getAuthorAnnot());

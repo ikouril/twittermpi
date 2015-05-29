@@ -57,7 +57,8 @@ public class Index {
     }
     
     public void execute(Output in){
-    	
+    	if (in == null)
+    		return;
     	String streamID=in.getType();
     	
     	if (streamID.equals("filter")){

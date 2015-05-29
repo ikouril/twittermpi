@@ -20,8 +20,10 @@ public class Sentiment {
 
 	
 	public Output execute(Output in){
-		ArrayList<Tweet> tweets=(ArrayList<Tweet>) in.getData();
+		if (in==null)
+			return null;
 		
+		ArrayList<Tweet> tweets=(ArrayList<Tweet>) in.getData();
 		for (int i=0;i<tweets.size();i++){
 			sentimentClassifier.annotate(tweets.get(i).getTextAnnot());
 			

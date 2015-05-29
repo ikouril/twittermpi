@@ -25,6 +25,8 @@ public class Lemma {
 	}
 
 	public Output execute(Output in){
+		if (in==null)
+			return null;
 		ArrayList<Tweet> tweets=(ArrayList<Tweet>) in.getData();
 		ArrayList<Multiset<String>> allKeywords=new ArrayList<Multiset<String>>();
 		for (int i=0;i<tweets.size();i++){

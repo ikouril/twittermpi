@@ -181,6 +181,8 @@ public class Filter {
 	}
 	
 	public Output execute(Output in){
+		if (in==null)
+			return null;
 
 		ArrayList<Tweet> block=(ArrayList<Tweet>) in.getData();
 		//Tweet tweet=(Tweet) input.getValue(0);

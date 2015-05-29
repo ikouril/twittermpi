@@ -21,6 +21,8 @@ public class Parser {
 	}
 	
 	public Output execute(Output in){
+		if (in==null)
+			return null;
 		ArrayList<Tweet> tweets=(ArrayList<Tweet>) in.getData();
 		
 		for (int i=0;i<tweets.size();i++){
