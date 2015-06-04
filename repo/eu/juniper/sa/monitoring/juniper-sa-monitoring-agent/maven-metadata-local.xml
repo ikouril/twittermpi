@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata>
+  <groupId>eu.juniper.sa.monitoring</groupId>
+  <artifactId>juniper-sa-monitoring-agent</artifactId>
+  <versioning>
+    <versions>
+      <version>0.1-SNAPSHOT</version>
+    </versions>
+    <lastUpdated>20150521120305</lastUpdated>
+  </versioning>
+</metadata>
